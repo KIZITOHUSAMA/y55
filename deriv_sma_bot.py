@@ -1,8 +1,24 @@
+"""
+Deriv SMA (6,9) Crossover Trading Bot
+-------------------------------------
+Requirements:
+    pip install python-deriv-api pandas websockets reactivex
+
+Usage:
+    export DERIV_TOKEN=your_token_here
+    python deriv_sma_bot.py
+"""
+
 import asyncio
 import os
 import sys
 import pandas as pd
-from deriv_api import DerivAPI
+try:
+    from deriv_api import DerivAPI
+except ImportError:
+    print("Error: 'python-deriv-api' not found.")
+    print("Please install it using: pip install python-deriv-api")
+    sys.exit(1)
 
 # --- Configuration ---
 APP_ID = 1089  # Default app_id for testing, or use your own
@@ -32,7 +48,10 @@ async def trade_logic(api, symbol):
     global stakes, last_processed_epoch
     print(f"Monitoring {symbol}...")
 
+    queue = asyncio.Queue()
+
     # Subscribe to candles updates
+    # The python-deriv-api uses RxPy observables. We push updates to an asyncio.Queue.
     candles_request = {
         "ticks_history": symbol,
         "adjust_start_time": 1,
@@ -44,19 +63,18 @@ async def trade_logic(api, symbol):
     }
 
     try:
-        subscription = await api.subscribe(candles_request)
+        observable = await api.subscribe(candles_request)
+        observable.subscribe(lambda x: queue.put_nowait(x))
 
-        async for candle_data in subscription:
+        while True:
+            candle_data = await queue.get()
             if 'ohlc' in candle_data:
                 ohlc = candle_data['ohlc']
                 open_time = ohlc['open_time']
 
                 # Check if a new candle has started
                 if open_time > last_processed_epoch[symbol]:
-                    # We just moved to a new candle.
-                    # The candle at open_time - TIMEFRAME is now officially CLOSED.
-
-                    # Fetch confirmed history to be sure
+                    # Fetch confirmed history
                     hist_resp = await api.ticks_history({
                         "ticks_history": symbol,
                         "adjust_start_time": 1,
@@ -68,21 +86,14 @@ async def trade_logic(api, symbol):
 
                     if 'candles' in hist_resp:
                         df = pd.DataFrame(hist_resp['candles'])
-                        # df.iloc[-1] is the current open candle
-                        # df.iloc[-2] is the just closed candle
-                        # df.iloc[-3] is the candle before that
-
                         if len(df) > SMA_SLOW:
                             sma6 = calculate_sma(df, SMA_FAST)
                             sma9 = calculate_sma(df, SMA_SLOW)
 
-                            last_idx = len(df) - 2
+                            last_idx = len(df) - 2 # Last closed candle
                             prev_idx = len(df) - 3
 
-                            # Crossover detection
-                            # Rise: Fast SMA crosses above Slow SMA
                             is_rise = (sma6.iloc[last_idx] > sma9.iloc[last_idx]) and (sma6.iloc[prev_idx] <= sma9.iloc[prev_idx])
-                            # Fall: Fast SMA crosses below Slow SMA
                             is_fall = (sma6.iloc[last_idx] < sma9.iloc[last_idx]) and (sma6.iloc[prev_idx] >= sma9.iloc[prev_idx])
 
                             if is_rise:
@@ -102,7 +113,6 @@ async def place_trade(api, symbol, contract_type):
     stake = stakes[symbol]
 
     try:
-        # 1. Get proposal
         proposal = await api.proposal({
             "proposal": 1,
             "amount": stake,
@@ -118,7 +128,6 @@ async def place_trade(api, symbol, contract_type):
             print(f"[{symbol}] Proposal Error: {proposal['error']['message']}")
             return
 
-        # 2. Buy contract
         buy = await api.buy({
             "buy": proposal['proposal']['id'],
             "price": stake
@@ -131,7 +140,6 @@ async def place_trade(api, symbol, contract_type):
         contract_id = buy['buy']['contract_id']
         print(f"[{symbol}] Bought {contract_type} contract {contract_id} with stake {stake}")
 
-        # 3. Monitor result
         await monitor_result(api, symbol, contract_id)
 
     except Exception as e:
@@ -139,12 +147,14 @@ async def place_trade(api, symbol, contract_type):
 
 async def monitor_result(api, symbol, contract_id):
     global stakes
+    queue = asyncio.Queue()
 
     try:
-        # Subscribe to contract updates
-        poc_sub = await api.subscribe({"proposal_open_contract": 1, "contract_id": contract_id})
+        observable = await api.subscribe({"proposal_open_contract": 1, "contract_id": contract_id})
+        observable.subscribe(lambda x: queue.put_nowait(x))
 
-        async for poc_data in poc_sub:
+        while True:
+            poc_data = await queue.get()
             poc = poc_data.get('proposal_open_contract', {})
             if poc.get('is_sold'):
                 status = poc.get('status')
@@ -158,7 +168,7 @@ async def monitor_result(api, symbol, contract_id):
                     stakes[symbol] = INITIAL_STAKE
 
                 print(f"[{symbol}] New stake for next trade: {stakes[symbol]}")
-                break # Stop monitoring this contract
+                break
 
     except Exception as e:
         print(f"[{symbol}] Error monitoring contract {contract_id}: {e}")
@@ -175,10 +185,7 @@ async def main():
     try:
         auth = await api.authorize(API_TOKEN)
         print(f"Authorized as {auth['authorize']['email']}")
-
-        # Start all monitor tasks
         await asyncio.gather(*(trade_logic(api, symbol) for symbol in SYMBOLS))
-
     except Exception as e:
         print(f"Main Loop Error: {e}")
     finally:
