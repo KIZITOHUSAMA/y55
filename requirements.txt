@@ -1,0 +1,4 @@
+python-deriv-api
+pandas
+websockets
+reactivex
