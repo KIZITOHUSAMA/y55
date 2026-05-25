@@ -1,0 +1,328 @@
+<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
+  <variables>
+    <variable type="" id="initial_stake">initial_stake</variable>
+    <variable type="" id="current_stake">current_stake</variable>
+    <variable type="" id="multiplier">multiplier</variable>
+    <variable type="" id="sma6_curr">sma6_curr</variable>
+    <variable type="" id="sma9_curr">sma9_curr</variable>
+    <variable type="" id="sma6_prev">sma6_prev</variable>
+    <variable type="" id="sma9_prev">sma9_prev</variable>
+  </variables>
+  <block type="trade_definition" id="trade_def" x="0" y="0">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market" id="market">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">1HZ10V</field>
+        <next>
+          <block type="trade_definition_tradetype" id="tradetype">
+            <field name="TRADETYPECAT_LIST">callput</field>
+            <field name="TRADETYPE_LIST">callput</field>
+            <next>
+              <block type="trade_definition_contracttype" id="contracttype">
+                <field name="TYPE_LIST">both</field>
+                <next>
+                  <block type="trade_definition_candleinterval" id="candleinterval">
+                    <field name="CANDLEINTERVAL_LIST">60</field>
+                    <next>
+                      <block type="trade_definition_restartbuysell" id="restart">
+                        <field name="TIME_MACHINE_ENABLED">FALSE</field>
+                        <next>
+                          <block type="trade_definition_restartonerror" id="onerror">
+                            <field name="RESTARTONERROR_ENABLED">FALSE</field>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="set_init_stake">
+        <field name="VAR" id="initial_stake">initial_stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="num_035">
+            <field name="NUM">0.35</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="set_curr_stake">
+            <field name="VAR" id="current_stake">current_stake</field>
+            <value name="VALUE">
+              <block type="variables_get" id="get_init_stake">
+                <field name="VAR" id="initial_stake">initial_stake</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="set_mult">
+                <field name="VAR" id="multiplier">multiplier</field>
+                <value name="VALUE">
+                  <block type="math_number" id="num_15">
+                    <field name="NUM">1.5</field>
+                  </block>
+                </value>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="PARAMETER">
+      <block type="trade_definition_tradeoptions" id="options">
+        <mutation has_first_barrier="false" has_second_barrier="false" has_prediction="false"></mutation>
+        <field name="DURATIONTYPE_LIST">m</field>
+        <value name="DURATION">
+          <block type="math_number" id="dur">
+            <field name="NUM">2</field>
+          </block>
+        </value>
+        <value name="AMOUNT">
+          <block type="variables_get" id="get_curr_stake_param">
+            <field name="VAR" id="current_stake">current_stake</field>
+          </block>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="before_pur" x="0" y="450">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="variables_set" id="calc_sma6_curr">
+        <field name="VAR" id="sma6_curr">sma6_curr</field>
+        <value name="VALUE">
+          <block type="sma" id="sma6_c">
+            <value name="INPUT">
+              <block type="ohlc_values" id="ohlc_c6">
+                <field name="OHLCFIELD_LIST">close</field>
+                <field name="CANDLEINTERVAL_LIST">default</field>
+              </block>
+            </value>
+            <value name="PERIOD">
+              <block type="math_number" id="p6">
+                <field name="NUM">6</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="calc_sma9_curr">
+            <field name="VAR" id="sma9_curr">sma9_curr</field>
+            <value name="VALUE">
+              <block type="sma" id="sma9_c">
+                <value name="INPUT">
+                  <block type="ohlc_values" id="ohlc_c9">
+                    <field name="OHLCFIELD_LIST">close</field>
+                    <field name="CANDLEINTERVAL_LIST">default</field>
+                  </block>
+                </value>
+                <value name="PERIOD">
+                  <block type="math_number" id="p9">
+                    <field name="NUM">9</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="calc_sma6_prev">
+                <field name="VAR" id="sma6_prev">sma6_prev</field>
+                <value name="VALUE">
+                  <block type="sma" id="sma6_p">
+                    <value name="INPUT">
+                      <block type="lists_getSublist" id="sub_ohlc6">
+                        <mutation at1="false" at2="true"></mutation>
+                        <field name="WHERE1">FIRST</field>
+                        <field name="WHERE2">FROM_END</field>
+                        <value name="LIST">
+                          <block type="ohlc_values" id="ohlc_p6">
+                            <field name="OHLCFIELD_LIST">close</field>
+                            <field name="CANDLEINTERVAL_LIST">default</field>
+                          </block>
+                        </value>
+                        <value name="AT2">
+                          <block type="math_number" id="idx2">
+                            <field name="NUM">2</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <value name="PERIOD">
+                      <block type="math_number" id="p6p">
+                        <field name="NUM">6</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="calc_sma9_prev">
+                    <field name="VAR" id="sma9_prev">sma9_prev</field>
+                    <value name="VALUE">
+                      <block type="sma" id="sma9_p">
+                        <value name="INPUT">
+                          <block type="lists_getSublist" id="sub_ohlc9">
+                            <mutation at1="false" at2="true"></mutation>
+                            <field name="WHERE1">FIRST</field>
+                            <field name="WHERE2">FROM_END</field>
+                            <value name="LIST">
+                              <block type="ohlc_values" id="ohlc_p9">
+                                <field name="OHLCFIELD_LIST">close</field>
+                                <field name="CANDLEINTERVAL_LIST">default</field>
+                              </block>
+                            </value>
+                            <value name="AT2">
+                              <block type="math_number" id="idx9">
+                                <field name="NUM">2</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <value name="PERIOD">
+                          <block type="math_number" id="p9p">
+                            <field name="NUM">9</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="controls_if" id="if_cross">
+                        <mutation elseif="1"></mutation>
+                        <value name="IF0">
+                          <block type="logic_operation" id="rise_logic" inline="false">
+                            <field name="OP">AND</field>
+                            <value name="A">
+                              <block type="logic_compare" id="prev_under">
+                                <field name="OP">LTE</field>
+                                <value name="A">
+                                  <block type="variables_get" id="get_sma6p">
+                                    <field name="VAR" id="sma6_prev">sma6_prev</field>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="get_sma9p">
+                                    <field name="VAR" id="sma9_prev">sma9_prev</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="logic_compare" id="curr_over">
+                                <field name="OP">GT</field>
+                                <value name="A">
+                                  <block type="variables_get" id="get_sma6c">
+                                    <field name="VAR" id="sma6_curr">sma6_curr</field>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="get_sma9c">
+                                    <field name="VAR" id="sma9_curr">sma9_curr</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <statement name="DO0">
+                          <block type="purchase" id="pur_rise">
+                            <field name="PURCHASE_LIST">CALL</field>
+                          </block>
+                        </statement>
+                        <value name="IF1">
+                          <block type="logic_operation" id="fall_logic" inline="false">
+                            <field name="OP">AND</field>
+                            <value name="A">
+                              <block type="logic_compare" id="prev_over">
+                                <field name="OP">GTE</field>
+                                <value name="A">
+                                  <block type="variables_get" id="get_sma6pf">
+                                    <field name="VAR" id="sma6_prev">sma6_prev</field>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="get_sma9pf">
+                                    <field name="VAR" id="sma9_prev">sma9_prev</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="logic_compare" id="curr_under">
+                                <field name="OP">LT</field>
+                                <value name="A">
+                                  <block type="variables_get" id="get_sma6cf">
+                                    <field name="VAR" id="sma6_curr">sma6_curr</field>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="get_sma9cf">
+                                    <field name="VAR" id="sma9_curr">sma9_curr</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <statement name="DO1">
+                          <block type="purchase" id="pur_fall">
+                            <field name="PURCHASE_LIST">PUT</field>
+                          </block>
+                        </statement>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="after_pur" x="0" y="1100">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="if_win">
+        <mutation else="1"></mutation>
+        <value name="IF0">
+          <block type="contract_check_result" id="check_win">
+            <field name="CHECK_RESULT">win</field>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="variables_set" id="set_stake_win">
+            <field name="VAR" id="current_stake">current_stake</field>
+            <value name="VALUE">
+              <block type="math_arithmetic" id="mult_stake">
+                <field name="OP">MULTIPLY</field>
+                <value name="A">
+                  <block type="variables_get" id="get_curr_win">
+                    <field name="VAR" id="current_stake">current_stake</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="get_mult_win">
+                    <field name="VAR" id="multiplier">multiplier</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+          </block>
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="set_stake_loss">
+            <field name="VAR" id="current_stake">current_stake</field>
+            <value name="VALUE">
+              <block type="variables_get" id="get_init_loss">
+                <field name="VAR" id="initial_stake">initial_stake</field>
+              </block>
+            </value>
+          </block>
+        </statement>
+        <next>
+          <block type="trade_again" id="again"></block>
+        </next>
+      </block>
+    </statement>
+  </block>
+</xml>
