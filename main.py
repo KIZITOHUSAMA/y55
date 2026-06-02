@@ -2,7 +2,7 @@ import os
 import subprocess
 import json
 import re
-import traceback
+import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,23 +50,24 @@ async def video_info(video: VideoURL):
     }
 
 @app.get("/download")
-async def download(url: str, type: str = "video", title: str = "download"):
+def download(url: str, type: str = "video", title: str = "download"):
+    # Using 'def' instead of 'async def' to run in a thread pool and not block the event loop
     safe_title = sanitize_filename(title)
 
     if type == "audio":
-        # Stream audio and convert to mp3 on the fly
         format_str = "bestaudio/best"
         ext = "mp3"
         media_type = "audio/mpeg"
 
-        # Get the direct URL for the audio stream
         ydl_opts = {'format': format_str, 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             audio_url = info['url']
+            user_agent = ydl_opts.get('user_agent', 'Mozilla/5.0')
 
         ffmpeg_cmd = [
             "ffmpeg",
+            "-user_agent", user_agent,
             "-i", audio_url,
             "-f", "mp3",
             "-acodec", "libmp3lame",
@@ -75,19 +76,15 @@ async def download(url: str, type: str = "video", title: str = "download"):
         ]
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     else:
-        # Stream 1080p video + audio
-        # Muxing to mpegts is good for streaming without needing seekability
-        ext = "ts"
-        media_type = "video/mp2t"
+        ext = "mp4"
+        media_type = "video/mp4"
 
         ydl_opts = {'format': 'bestvideo[height<=1080]+bestaudio/best', 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            # Find the video and audio URLs
-            # If they are merged already (rare for 1080p), info['url'] might exist
-            # Usually they are in info['requested_formats']
             video_url = None
             audio_url = None
+            user_agent = ydl_opts.get('user_agent', 'Mozilla/5.0')
             if 'requested_formats' in info:
                 for f in info['requested_formats']:
                     if f.get('vcodec') != 'none' and video_url is None:
@@ -96,24 +93,26 @@ async def download(url: str, type: str = "video", title: str = "download"):
                         audio_url = f['url']
             else:
                 video_url = info['url']
-                audio_url = info.get('url') # Might be the same if it's a combined format
+                audio_url = info.get('url')
 
         if not video_url:
              raise HTTPException(status_code=400, detail="Could not find video stream")
 
         ffmpeg_cmd = [
             "ffmpeg",
+            "-user_agent", user_agent,
             "-i", video_url
         ]
         if audio_url and audio_url != video_url:
-            ffmpeg_cmd.extend(["-i", audio_url])
+            ffmpeg_cmd.extend(["-user_agent", user_agent, "-i", audio_url])
 
         ffmpeg_cmd.extend([
             "-map", "0:v:0",
             "-map", "1:a:0" if audio_url and audio_url != video_url else "0:a:0",
             "-c:v", "copy",
             "-c:a", "aac",
-            "-f", "mpegts",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-f", "mp4",
             "pipe:1"
         ])
 
