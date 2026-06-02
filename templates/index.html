@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Y55 - Fast YouTube Downloader</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="dark-mode">
+    <div class="container">
+        <header>
+            <h1><i class="fab fa-youtube"></i> Y55 Downloader</h1>
+            <p>Fast 1080p Video & Audio Downloads</p>
+        </header>
+
+        <main>
+            <div class="search-box">
+                <input type="text" id="videoUrl" placeholder="Paste YouTube link here..." autocomplete="off">
+                <button id="searchBtn"><i class="fas fa-search"></i> Fetch</button>
+            </div>
+
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Fetching video details...</p>
+            </div>
+
+            <div id="preview" class="hidden">
+                <div class="video-card">
+                    <img id="thumbnail" src="" alt="Thumbnail">
+                    <div class="video-info">
+                        <h2 id="videoTitle"></h2>
+                        <p id="videoAuthor"></p>
+                        <p id="videoDuration"></p>
+
+                        <div class="download-options">
+                            <button id="downloadVideo" class="btn btn-primary">
+                                <i class="fas fa-video"></i> Download 1080p Video
+                            </button>
+                            <button id="downloadAudio" class="btn btn-secondary">
+                                <i class="fas fa-music"></i> Download MP3 Audio
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="downloading" class="hidden">
+                <p>Download started! Please wait...</p>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Y55. For personal use only.</p>
+        </footer>
+    </div>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
