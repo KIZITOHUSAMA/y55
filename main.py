@@ -10,11 +10,20 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import yt_dlp
 
+# Get absolute paths for static and templates
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+# Ensure directories exist
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+
 app = FastAPI()
 
 # Mount static files and templates
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 class VideoURL(BaseModel):
     url: str
@@ -51,7 +60,6 @@ async def video_info(video: VideoURL):
 
 @app.get("/download")
 def download(url: str, type: str = "video", title: str = "download"):
-    # Using 'def' instead of 'async def' to run in a thread pool and not block the event loop
     safe_title = sanitize_filename(title)
 
     if type == "audio":
