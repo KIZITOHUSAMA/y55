@@ -17,9 +17,11 @@
 //--- Input parameters
 input int      InpEMA_Fast          = 5;          // Fast EMA Period
 input int      InpEMA_Slow          = 9;          // Slow EMA Period
+input bool     InpUseMACD           = false;      // Use MACD Filter
 input int      InpMACD_Fast         = 12;         // MACD Fast EMA
 input int      InpMACD_Slow         = 26;         // MACD Slow EMA
 input int      InpMACD_Signal       = 9;          // MACD Signal Period
+input bool     InpUseRSI            = false;      // Use RSI Filter
 input int      InpRSI_Period        = 14;         // RSI Period
 input double   InpRSI_Level         = 50;         // RSI Level (Entry if > or <)
 input int      InpVP_Lookback       = 60;         // Volume Profile Lookback (candles)
@@ -108,38 +110,66 @@ void OnTick()
    double poc, vah, val;
    if(!CalculateVolumeProfile(poc, vah, val)) return;
 
-   // 6. Signal Logic
-   bool longCondition = (emaFast[1] > emaSlow[1]) && (emaFast[2] <= emaSlow[2]) &&
-                        (macdMain[1] > macdSignal[1]) && (rsiVal[1] > InpRSI_Level);
+   // 6. Signal Logic (EMA Crossover is mandatory, others optional)
+   bool emaLong  = (emaFast[1] > emaSlow[1]) && (emaFast[2] <= emaSlow[2]);
+   bool macdLong = !InpUseMACD || (macdMain[1] > macdSignal[1]);
+   bool rsiLong  = !InpUseRSI  || (rsiVal[1] > InpRSI_Level);
+   bool longCondition = emaLong && macdLong && rsiLong;
 
-   bool shortCondition = (emaFast[1] < emaSlow[1]) && (emaFast[2] >= emaSlow[2]) &&
-                         (macdMain[1] < macdSignal[1]) && (rsiVal[1] < InpRSI_Level);
+   bool emaShort  = (emaFast[1] < emaSlow[1]) && (emaFast[2] >= emaSlow[2]);
+   bool macdShort = !InpUseMACD || (macdMain[1] < macdSignal[1]);
+   bool rsiShort  = !InpUseRSI  || (rsiVal[1] < InpRSI_Level);
+   bool shortCondition = emaShort && macdShort && rsiShort;
 
    // 7. Calculate Lot Size using Kelly
    double kellyRisk = InpKelly_P - (1.0 - InpKelly_P) / InpKelly_B;
    kellyRisk *= InpKelly_Fraction;
    if(kellyRisk <= 0) kellyRisk = 0.01; // Fallback to 1% if Kelly is negative
 
-   // 8. Place Limit Orders
+   // 8. Place Market and Limit Orders
    if(longCondition)
    {
+      double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl = val; // Outside value area
-      if(sl >= poc) sl = poc - 100 * _Point; // Safety
+      if(sl >= currentPrice) sl = currentPrice - 100 * _Point; // Safety
 
-      double risk = poc - sl;
-      double tp = poc + InpFullCloseRatio * risk;
-      double lotSize = CalculateLotSize(kellyRisk, poc, sl);
-      trade.BuyLimit(lotSize, poc, _Symbol, sl, tp, ORDER_TIME_GTC, 0, "EMA MACD RSI VP BUY");
+      // Market Order (50% of Kelly Risk)
+      double lotMarket = CalculateLotSize(kellyRisk * 0.5, currentPrice, sl);
+      double riskM = currentPrice - sl;
+      double tpM = currentPrice + InpFullCloseRatio * riskM;
+      trade.Buy(lotMarket, _Symbol, currentPrice, sl, tpM, "EMA VP MARKET BUY");
+
+      // Limit Order at POC (50% of Kelly Risk)
+      if(poc < currentPrice)
+      {
+         if(sl >= poc) sl = poc - 100 * _Point;
+         double lotLimit = CalculateLotSize(kellyRisk * 0.5, poc, sl);
+         double riskL = poc - sl;
+         double tpL = poc + InpFullCloseRatio * riskL;
+         trade.BuyLimit(lotLimit, poc, _Symbol, sl, tpL, ORDER_TIME_GTC, 0, "EMA VP LIMIT BUY");
+      }
    }
    else if(shortCondition)
    {
+      double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       double sl = vah; // Outside value area
-      if(sl <= poc) sl = poc + 100 * _Point; // Safety
+      if(sl <= currentPrice) sl = currentPrice + 100 * _Point; // Safety
 
-      double risk = sl - poc;
-      double tp = poc - InpFullCloseRatio * risk;
-      double lotSize = CalculateLotSize(kellyRisk, poc, sl);
-      trade.SellLimit(lotSize, poc, _Symbol, sl, tp, ORDER_TIME_GTC, 0, "EMA MACD RSI VP SELL");
+      // Market Order (50% of Kelly Risk)
+      double lotMarket = CalculateLotSize(kellyRisk * 0.5, currentPrice, sl);
+      double riskM = sl - currentPrice;
+      double tpM = currentPrice - InpFullCloseRatio * riskM;
+      trade.Sell(lotMarket, _Symbol, currentPrice, sl, tpM, "EMA VP MARKET SELL");
+
+      // Limit Order at POC (50% of Kelly Risk)
+      if(poc > currentPrice)
+      {
+         if(sl <= poc) sl = poc + 100 * _Point;
+         double lotLimit = CalculateLotSize(kellyRisk * 0.5, poc, sl);
+         double riskL = sl - poc;
+         double tpL = poc - InpFullCloseRatio * riskL;
+         trade.SellLimit(lotLimit, poc, _Symbol, sl, tpL, ORDER_TIME_GTC, 0, "EMA VP LIMIT SELL");
+      }
    }
 }
 
@@ -152,7 +182,8 @@ void ManagePositions()
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
-      if(pos.SelectByIndex(i))
+      ulong ticket = PositionGetTicket(i);
+      if(pos.SelectByTicket(ticket))
       {
          if(pos.Symbol() == _Symbol && pos.Magic() == 123456)
          {
@@ -183,7 +214,9 @@ void ManagePositions()
 
                if(takePartial)
                {
-                  double closeVol = NormalizeDouble(volume / 2.0, 2);
+                  double stepVol = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+                  int digits = (stepVol > 0) ? (int)-MathLog10(stepVol) : 2;
+                  double closeVol = NormalizeDouble(volume / 2.0, digits);
                   if(trade.PositionClosePartial(pos.Ticket(), closeVol))
                   {
                      trade.PositionModify(pos.Ticket(), openPrice, tp);

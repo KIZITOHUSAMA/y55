@@ -22,6 +22,8 @@ MAX_ORDERS = 20
 TRAILING_STOP_PIPS = 10
 PARTIAL_RR = 2.0
 FULL_RR = 5.0
+USE_MACD = False
+USE_RSI = False
 
 # --- Indicator Helpers (Native Python for Speed) ---
 
@@ -190,19 +192,23 @@ class DerivBot:
 
         closes = [c['close'] for c in self.history]
 
-        ema_f_prev = calculate_ema(closes[:-1], EMA_FAST)
-        ema_s_prev = calculate_ema(closes[:-1], EMA_SLOW)
-        ema_f_curr = calculate_ema(closes, EMA_FAST)
-        ema_s_curr = calculate_ema(closes, EMA_SLOW)
+        ema_f_prev = calculate_ema(closes[:-2], EMA_FAST)
+        ema_s_prev = calculate_ema(closes[:-2], EMA_SLOW)
+        ema_f_curr = calculate_ema(closes[:-1], EMA_FAST)
+        ema_s_curr = calculate_ema(closes[:-1], EMA_SLOW)
 
-        macd_l, macd_s = calculate_macd(closes, MACD_FAST, MACD_SLOW, MACD_SIGNAL)
-        rsi = calculate_rsi(closes, RSI_PERIOD)
+        macd_l, macd_s = calculate_macd(closes[:-1], MACD_FAST, MACD_SLOW, MACD_SIGNAL)
+        rsi = calculate_rsi(closes[:-1], RSI_PERIOD)
 
-        if not all([ema_f_prev, ema_s_prev, ema_f_curr, ema_s_curr, macd_l, macd_s, rsi]):
-            return
+        ema_long = (ema_f_prev is not None and ema_s_prev is not None and ema_f_prev <= ema_s_prev) and (ema_f_curr > ema_s_curr)
+        macd_long = not USE_MACD or (macd_l is not None and macd_l > macd_s)
+        rsi_long = not USE_RSI or (rsi is not None and rsi > 50)
+        long_signal = ema_long and macd_long and rsi_long
 
-        long_signal = (ema_f_prev <= ema_s_prev) and (ema_f_curr > ema_s_curr) and (macd_l > macd_s) and (rsi > 50)
-        short_signal = (ema_f_prev >= ema_s_prev) and (ema_f_curr < ema_s_curr) and (macd_l < macd_s) and (rsi < 50)
+        ema_short = (ema_f_prev is not None and ema_s_prev is not None and ema_f_prev >= ema_s_prev) and (ema_f_curr < ema_s_curr)
+        macd_short = not USE_MACD or (macd_l is not None and macd_l < macd_s)
+        rsi_short = not USE_RSI or (rsi is not None and rsi < 50)
+        short_signal = ema_short and macd_short and rsi_short
 
         if long_signal or short_signal:
             poc, vah, val = calculate_volume_profile(self.history[-VP_LOOKBACK:])
@@ -212,11 +218,15 @@ class DerivBot:
             kelly = KELLY_P - (1 - KELLY_P) / KELLY_B
             risk_pct = max(0.01, kelly * KELLY_FRACTION)
 
-            # Place trade (Market for simplicity in Python example, or Pending if API supports)
-            # In Deriv, we usually buy/sell contracts
             direction = 'CALL' if long_signal else 'PUT'
-            print(f"Signal: {direction} at {closes[-1]}, POC: {poc}")
-            # contract = await self.api.buy({'buy': '...', 'price': ...})
+            print(f"Signal: {direction} detected. Crossover at {closes[-1]}")
+
+            # Market Execution (50% Risk)
+            await self.buy_contract(direction, risk_pct * 0.5, closes[-1], val if long_signal else vah)
+
+            # Limit/Pending Execution (50% Risk)
+            print(f"Placing pending {direction} at POC: {poc}")
+            await self.buy_contract(direction, risk_pct * 0.5, poc, val if long_signal else vah)
 
     async def manage_positions(self, current_price):
         for ticket, pos in list(self.active_positions.items()):
