@@ -1,0 +1,6 @@
+MetaTrader5
+PyQt6
+pyqtgraph
+pandas
+numpy
+requests
