@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import QTimer, Qt
 import pyqtgraph as pg
 import MetaTrader5 as mt5
+import numpy as np
 
 class TradingBotGUI(QMainWindow):
     def __init__(self, bot_engine):
@@ -103,8 +104,8 @@ class TradingBotGUI(QMainWindow):
         self.phone_id_input = QLineEdit()
         layout.addWidget(self.phone_id_input)
 
-        save_btn = QPushButton("Save Settings")
-        layout.addWidget(save_btn)
+        self.save_btn = QPushButton("Save Settings")
+        layout.addWidget(self.save_btn)
         layout.addStretch()
 
         self.tabs.addTab(self.config_tab, "Settings")
@@ -133,10 +134,29 @@ class TradingBotGUI(QMainWindow):
         # 3. Update Positions Table
         self.update_positions_table()
 
+        # 4. Update Chart if visible
+        if self.tabs.currentIndex() == 2: # Chart Tab
+            self.update_chart()
+
+    def update_chart(self):
+        selected = self.watchlist_table.selectedItems()
+        if not selected: return
+        symbol = selected[0].text()
+
+        # Fetch M5 data for plotting
+        df = self.bot.mt5.get_candles(symbol, "M5", 100)
+        if df is not None:
+            self.plot_widget.clear()
+            x = np.arange(len(df))
+            y = df['close'].values
+            self.plot_widget.plot(x, y, pen=pg.mkPen('y', width=2))
+            self.plot_widget.setTitle(f"Live M5 Chart: {symbol}")
+
     def update_watchlist_table(self):
-        data = self.bot.watchlist_data
-        self.watchlist_table.setRowCount(len(data))
-        for row, (symbol, vals) in enumerate(data.items()):
+        # Create a snapshot to avoid RuntimeError: dictionary changed size during iteration
+        data_snapshot = dict(self.bot.watchlist_data)
+        self.watchlist_table.setRowCount(len(data_snapshot))
+        for row, (symbol, vals) in enumerate(data_snapshot.items()):
             self.watchlist_table.setItem(row, 0, QTableWidgetItem(symbol))
             self.watchlist_table.setItem(row, 1, QTableWidgetItem(str(vals.get('trend', 'N/A'))))
             self.watchlist_table.setItem(row, 2, QTableWidgetItem(str(vals.get('rsi', 'N/A'))))
@@ -169,6 +189,8 @@ if __name__ == "__main__":
         def __init__(self):
             self.running = False
             self.watchlist_data = {}
+            self.mt5 = None
+            self.db = None
         def get_account_summary(self): return None
     window = TradingBotGUI(Dummy())
     window.show()

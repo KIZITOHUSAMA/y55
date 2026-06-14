@@ -11,6 +11,24 @@ class RiskManager:
         if self.pause_until and datetime.now() < self.pause_until:
             return False, f"Paused until {self.pause_until}"
 
+        # Session Time Check (EAT)
+        now_hour = datetime.now().hour
+        in_session = False
+        for session_name, params in self.config.SESSIONS.items():
+            start = params['start']
+            end = params['end']
+            if start < end:
+                if start <= now_hour < end:
+                    in_session = True
+                    break
+            else: # Overnight session
+                if now_hour >= start or now_hour < end:
+                    in_session = True
+                    break
+
+        if not in_session:
+            return False, "Outside trading sessions"
+
         # Daily Drawdown check
         daily_profit = self.db.get_daily_profit()
         balance = account_info['balance']

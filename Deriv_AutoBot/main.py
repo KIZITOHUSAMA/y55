@@ -13,7 +13,7 @@ from trade_manager import TradeManager
 from database import DatabaseManager
 from whatsapp import WhatsAppNotifier
 from gui import TradingBotGUI
-from indicators import atr
+from indicators import atr, calculate_all_indicators
 import config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,18 +75,25 @@ class AutoBotController:
                 positions = self.mt5.get_positions()
                 active_symbols = [p.symbol for p in positions]
 
-                if len(positions) < config.MAX_SIMULTANEOUS_TRADES:
-                    for symbol in self.symbols:
-                        # Update Watchlist data for GUI
-                        self.update_symbol_watchlist_data(symbol)
+                for symbol in self.symbols:
+                    # Fetch data once per symbol
+                    df_h1 = self.mt5.get_candles(symbol, "H1", 300)
+                    df_m15 = self.mt5.get_candles(symbol, "M15", 100)
+                    df_m5 = self.mt5.get_candles(symbol, "M5", 50)
+                    tick = self.mt5.get_tick(symbol)
+                    s_info = self.mt5.get_symbol_info(symbol)
 
-                        if symbol in active_symbols:
-                            continue
+                    # Update Watchlist data for GUI
+                    self.update_symbol_watchlist_data(symbol, df_h1, df_m15, tick, s_info)
 
-                        signal = self.strategy.get_signal(symbol)
+                    if symbol in active_symbols:
+                        continue
+
+                    if len(positions) < config.MAX_SIMULTANEOUS_TRADES:
+                        signal = self.strategy.get_signal(symbol, df_h1, df_m15, df_m5)
                         if signal:
                             self.watchlist_data[symbol]['signal'] = signal
-                            self.execute_signal(symbol, signal)
+                            self.execute_signal(symbol, signal, df_m5, tick, s_info)
                         else:
                             self.watchlist_data[symbol]['signal'] = "NEUTRAL"
 
@@ -103,10 +110,10 @@ class AutoBotController:
         # Check for closed tickets
         closed_tickets = self.active_tickets - current_tickets
         for ticket in closed_tickets:
-            # Fetch history to get profit/exit price
-            # For simplicity in this version, we look at last deals
-            history = mt5.history_deals_get(ticket=ticket)
+            # Fetch history using the position ticket to get the exit deal and profit
+            history = mt5.history_deals_get(position=ticket)
             if history:
+                # The exit deal is usually the last one in the history for this position
                 deal = history[-1]
                 profit = deal.profit + deal.commission + deal.swap
                 self.db.log_trade_close(ticket, deal.price, profit, datetime.fromtimestamp(deal.time))
@@ -117,20 +124,12 @@ class AutoBotController:
         self.active_tickets = current_tickets
         self.trade_mgmt.clean_partial_tp_list(self.active_tickets)
 
-    def update_symbol_watchlist_data(self, symbol):
-        # Optimized to only fetch what's needed
+    def update_symbol_watchlist_data(self, symbol, df_h1, df_m15, tick, s_info):
         try:
-            df_h1 = self.mt5.get_candles(symbol, "H1", 2)
-            df_m15 = self.mt5.get_candles(symbol, "M15", 20)
-            tick = self.mt5.get_tick(symbol)
-            s_info = self.mt5.get_symbol_info(symbol)
+            if df_h1 is None or df_m15 is None or tick is None or s_info is None: return
 
-            if df_h1 is None or df_m15 is None or tick is None: return
+            trend = self.strategy.check_trend_h1(symbol, df_h1)
 
-            # Simplified trend/rsi for display
-            trend = self.strategy.check_trend_h1(symbol)
-
-            from strategy import calculate_all_indicators
             df_m15 = calculate_all_indicators(df_m15, config)
             last_m15 = df_m15.iloc[-1]
 
@@ -146,10 +145,7 @@ class AutoBotController:
         except Exception as e:
             logging.debug(f"Error updating watchlist for {symbol}: {e}")
 
-    def execute_signal(self, symbol, signal_type):
-        tick = self.mt5.get_tick(symbol)
-        symbol_info = self.mt5.get_symbol_info(symbol)
-
+    def execute_signal(self, symbol, signal_type, df_m5, tick, symbol_info):
         allowed, spread = self.risk.check_spread(symbol, tick, symbol_info)
         if not allowed:
             logging.info(f"Skipping {symbol} due to high spread: {spread}")
@@ -157,8 +153,7 @@ class AutoBotController:
 
         order_type = mt5.ORDER_TYPE_BUY if signal_type == "BUY" else mt5.ORDER_TYPE_SELL
 
-        df = self.mt5.get_candles(symbol, "M5", 20)
-        atr_val = atr(df['high'].values, df['low'].values, df['close'].values, 14)[-1]
+        atr_val = atr(df_m5['high'].values, df_m5['low'].values, df_m5['close'].values, 14)[-1]
 
         price = tick.ask if signal_type == "BUY" else tick.bid
         sl_dist = atr_val * 2
@@ -181,6 +176,18 @@ def main():
 
     gui.start_btn.clicked.connect(controller.start)
     gui.stop_btn.clicked.connect(controller.stop)
+
+    def save_settings():
+        token = gui.token_input.text()
+        phone_id = gui.phone_id_input.text()
+        if token and phone_id:
+            controller.whatsapp.token = token
+            controller.whatsapp.phone_id = phone_id
+            controller.whatsapp.url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+            controller.whatsapp.headers["Authorization"] = f"Bearer {token}"
+            logging.info("WhatsApp settings updated from GUI")
+
+    gui.save_btn.clicked.connect(save_settings)
 
     gui.show()
     sys.exit(app.exec())

@@ -6,11 +6,12 @@ class MTFStrategy:
         self.mt5 = mt5_engine
         self.config = config
 
-    def check_trend_h1(self, symbol):
+    def check_trend_h1(self, symbol, df=None):
         """
         H1 Trend Filter: Price above/below EMA 50 & 200.
         """
-        df = self.mt5.get_candles(symbol, "H1", 300)
+        if df is None:
+            df = self.mt5.get_candles(symbol, "H1", 300)
         if df is None or len(df) < self.config.EMA_SLOW:
             return None
 
@@ -24,14 +25,15 @@ class MTFStrategy:
 
         return "NEUTRAL"
 
-    def check_pullback_m15(self, symbol, trend):
+    def check_pullback_m15(self, symbol, trend, df=None):
         """
         M15 Setup: Price pulls back towards EMA 50.
         For BUY: Close should be near or below EMA 50 but above EMA 200?
         Or simply RSI oversold/overbought.
         """
-        df = self.mt5.get_candles(symbol, "M15", 100)
-        if df is None: return False
+        if df is None:
+            df = self.mt5.get_candles(symbol, "M15", 100)
+        if df is None or len(df) < 14: return False
 
         df = calculate_all_indicators(df, self.config)
         last_row = df.iloc[-1]
@@ -45,32 +47,33 @@ class MTFStrategy:
 
         return False
 
-    def check_trigger_m5(self, symbol, trend):
+    def check_trigger_m5(self, symbol, trend, df=None):
         """
-        M5 Entry Trigger: Candle close in direction of trend.
+        M5 Entry Trigger: Completed candle close in direction of trend.
+        Uses iloc[-2] to ensure the candle is finalized.
         """
-        df = self.mt5.get_candles(symbol, "M5", 50)
-        if df is None: return False
+        if df is None:
+            df = self.mt5.get_candles(symbol, "M5", 50)
+        if df is None or len(df) < 2: return False
 
-        last_candle = df.iloc[-1]
-        prev_candle = df.iloc[-2]
+        confirmed_candle = df.iloc[-2]
 
         if trend == "BUY":
-            # Bullish close
-            return last_candle['close'] > last_candle['open']
+            # Bullish close on the completed candle
+            return confirmed_candle['close'] > confirmed_candle['open']
         elif trend == "SELL":
-            # Bearish close
-            return last_candle['close'] < last_candle['open']
+            # Bearish close on the completed candle
+            return confirmed_candle['close'] < confirmed_candle['open']
 
         return False
 
-    def get_signal(self, symbol):
-        trend = self.check_trend_h1(symbol)
+    def get_signal(self, symbol, df_h1=None, df_m15=None, df_m5=None):
+        trend = self.check_trend_h1(symbol, df_h1)
         if trend == "NEUTRAL" or trend is None:
             return None
 
-        if self.check_pullback_m15(symbol, trend):
-            if self.check_trigger_m5(symbol, trend):
+        if self.check_pullback_m15(symbol, trend, df_m15):
+            if self.check_trigger_m5(symbol, trend, df_m5):
                 return trend
 
         return None
