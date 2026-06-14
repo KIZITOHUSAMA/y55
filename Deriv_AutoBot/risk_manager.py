@@ -48,10 +48,28 @@ class RiskManager:
         else:
             self.consecutive_losses = 0
 
-    def calculate_lot(self, symbol_info, risk_percent, sl_points):
-        # Simplest approach for Deriv: use minimum volume
-        # Or calculate based on balance/risk if SL is provided
-        return symbol_info.volume_min
+    def calculate_lot(self, symbol_info, balance, risk_percent, sl_points):
+        """
+        Calculates the lot size based on account balance and risk per trade.
+        """
+        if sl_points <= 0:
+            return symbol_info.volume_min
+
+        risk_amount = balance * (risk_percent / 100)
+
+        # Calculate lot size based on point value if available, else simple ratio
+        # For many Deriv indices, volume * sl_points = loss
+        lot = risk_amount / sl_points if sl_points != 0 else symbol_info.volume_min
+
+        # Clamp to symbol limits
+        lot = max(symbol_info.volume_min, min(symbol_info.volume_max, lot))
+
+        # Round to step
+        step = symbol_info.volume_step
+        if step > 0:
+            lot = round(lot / step) * step
+
+        return round(lot, 2)
 
     def check_spread(self, symbol, tick, symbol_info):
         spread = (tick.ask - tick.bid) / symbol_info.point

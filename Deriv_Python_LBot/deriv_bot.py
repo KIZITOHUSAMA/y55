@@ -168,7 +168,12 @@ class DerivLBot:
             elif msg_type == 'proposal_open_contract':
                 await self.handle_contract_update(data)
             elif msg_type == 'authorize':
-                logging.info(f"Authorized as: {data['authorize']['email']}")
+                if 'error' in data:
+                    logging.error(f"Authorization failed: {data['error'].get('message', 'Unknown error')}")
+                elif 'authorize' in data and 'email' in data['authorize']:
+                    logging.info(f"Authorized as: {data['authorize']['email']}")
+                else:
+                    logging.warning("Authorization succeeded but email not found in response.")
 
 if __name__ == "__main__":
     bot = DerivLBot()

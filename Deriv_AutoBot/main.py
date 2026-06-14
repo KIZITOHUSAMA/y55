@@ -153,14 +153,19 @@ class AutoBotController:
 
         order_type = mt5.ORDER_TYPE_BUY if signal_type == "BUY" else mt5.ORDER_TYPE_SELL
 
-        atr_val = atr(df_m5['high'].values, df_m5['low'].values, df_m5['close'].values, 14)[-1]
+        atr_series = atr(df_m5['high'].values, df_m5['low'].values, df_m5['close'].values, 14)
+        atr_val = atr_series[-1]
+
+        if np.isnan(atr_val) or atr_val <= 0:
+            logging.warning(f"Invalid ATR for {symbol}, using fallback.")
+            return
 
         price = tick.ask if signal_type == "BUY" else tick.bid
         sl_dist = atr_val * 2
         sl = price - sl_dist if signal_type == "BUY" else price + sl_dist
         tp = price + (sl_dist * config.RISK_RR_RATIO) if signal_type == "BUY" else price - (sl_dist * config.RISK_RR_RATIO)
 
-        lot = self.risk.calculate_lot(symbol_info, 1.0, sl_dist)
+        lot = self.risk.calculate_lot(symbol_info, self.last_account_info['balance'], 1.0, sl_dist)
 
         result = self.mt5.open_trade(symbol, order_type, lot, sl, tp)
         if result:
