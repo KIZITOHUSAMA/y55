@@ -1,5 +1,5 @@
 # Deriv API Configuration
-DERIV_TOKEN = "YOUR_DERIV_API_TOKEN"
+DERIV_TOKEN = "PLACEHOLDER_DERIV_TOKEN"
 APP_ID = "1089" # Default for deriv.com
 
 # Strategy Parameters

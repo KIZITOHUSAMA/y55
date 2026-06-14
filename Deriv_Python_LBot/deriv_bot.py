@@ -54,7 +54,8 @@ class DerivLBot:
     async def handle_ohlc(self, data):
         if 'candles' in data:
             symbol = data.get('echo_req', {}).get('ticks_history')
-            self.history[symbol] = [c['close'] for c in data['candles']]
+            # Ensure all prices are floats to avoid NumPy TypeError
+            self.history[symbol] = [float(c['close']) for c in data['candles']]
             self.last_candle_time[symbol] = data['candles'][-1]['epoch']
             logging.info(f"Initialized history for {symbol}")
 
@@ -66,12 +67,8 @@ class DerivLBot:
             # If new candle starts
             if open_time > self.last_candle_time[symbol]:
                 # The previous candle is now closed
-                # The 'ohlc' message for the new open_time actually contains the new candle.
-                # The last price of the previous candle is what we need to finalize.
-                # However, Deriv OHLC stream updates the current candle.
-
-                # Logic: append current price as a new candle if open_time changed
-                self.history[symbol].append(ohlc['close'])
+                # Ensure price is float
+                self.history[symbol].append(float(ohlc['close']))
                 if len(self.history[symbol]) > 100:
                     self.history[symbol].pop(0)
 
@@ -86,7 +83,7 @@ class DerivLBot:
             else:
                 # Update current candle price
                 if self.history[symbol]:
-                    self.history[symbol][-1] = ohlc['close']
+                    self.history[symbol][-1] = float(ohlc['close'])
 
     async def place_trade(self, symbol, signal):
         stake = round(self.current_stakes[symbol], 2)
